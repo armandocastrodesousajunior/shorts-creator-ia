@@ -1,0 +1,26 @@
+name: creator-shorts
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - ffmpeg
+  - pip
+  - pip:
+      - faster-whisper
+      - transformers
+      - huggingface_hub
+      - accelerate
+      - moviepy
+      - flask
+      - pillow
+      - scikit-image
+      - opencv-python
+      - notebook
+      - ipywidgets
