@@ -40,7 +40,7 @@ python main.py --input "caminho/do/video.mp4" --output "pasta_de_saida" --mode F
 - `--llm` / `-l`: ID do modelo LLM local (ex: `TinyLlama/TinyLlama-1.1B-Chat-v1.0`).
 
 ### 2. Jupyter Notebook / Google Colab
-Abra o arquivo `creator-shorts.ipynb` para uma experiência interativa e visual.
+Abra o arquivo `shorts-creator-ia.ipynb` para uma experiência interativa e visual.
 
 ## Requisitos Técnicos
 - **GPU**: Recomendado 8GB+ de VRAM para rodar o modo "Alta Qualidade" localmente.
