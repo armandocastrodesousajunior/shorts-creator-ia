@@ -1,4 +1,5 @@
 import os
+import yt_dlp
 
 # Fix for OMP error on Windows
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -15,15 +16,32 @@ from video_editor import VideoEditor
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def process_video(video_path, mode, whisper_size, llm_id, progress=gr.Progress()):
-    if not video_path:
-        return None, None, "Por favor, envie um vídeo."
+def download_youtube_video(url, output_dir="gradio_outputs"):
+    os.makedirs(output_dir, exist_ok=True)
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+        'noplaylist': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)
+
+def process_video(video_path, yt_url, mode, whisper_size, llm_id, progress=gr.Progress()):
+    if not video_path and not yt_url:
+        return None, None, "Por favor, envie um vídeo ou um link do YouTube."
 
     output_dir = "gradio_outputs"
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        progress(0, desc="🚀 Inicializando modelos...")
+        # 1. Download se for URL
+        final_video_path = video_path
+        if yt_url:
+            progress(0, desc="📥 Baixando vídeo do YouTube...")
+            final_video_path = download_youtube_video(yt_url, output_dir)
+
+        progress(0.1, desc="🚀 Inicializando modelos...")
         transcriber = AudioTranscriber(model_size=whisper_size)
         selector = MomentSelector(model_id=llm_id)
         editor = VideoEditor()
@@ -33,7 +51,7 @@ def process_video(video_path, mode, whisper_size, llm_id, progress=gr.Progress()
             analyzer = VisualAnalyzer()
 
         progress(0.2, desc="🎙️ Transcrevendo áudio...")
-        transcription = transcriber.transcribe(video_path)
+        transcription = transcriber.transcribe(final_video_path)
         
         visual_context = []
         if mode == "High Quality":
@@ -41,7 +59,7 @@ def process_video(video_path, mode, whisper_size, llm_id, progress=gr.Progress()
             # Simple heuristic sampling for Gradio demo
             duration_s = transcription['segments'][-1]['end']
             for ts in range(0, int(duration_s), 20):
-                frame = analyzer.extract_frame(video_path, ts * 1000)
+                frame = analyzer.extract_frame(final_video_path, ts * 1000)
                 analysis = analyzer.analyze_frame(frame)
                 visual_context.append({"timestamp": ts, "analysis": analysis})
         
@@ -58,7 +76,7 @@ def process_video(video_path, mode, whisper_size, llm_id, progress=gr.Progress()
         for i, m in enumerate(moments):
             clip_name = f"clip_{i}.mp4"
             clip_out = os.path.join(output_dir, clip_name)
-            if editor.cut_video(video_path, clip_out, m['start'], m['end']):
+            if editor.cut_video(final_video_path, clip_out, m['start'], m['end']):
                 clip_paths.append(clip_out)
                 metadata_list.append({
                     "moment": i,
@@ -67,14 +85,14 @@ def process_video(video_path, mode, whisper_size, llm_id, progress=gr.Progress()
                     "end": f"{m['end']:.2f}s"
                 })
 
-        final_video = None
+        final_compilation = None
         if clip_paths:
             progress(0.9, desc="🔗 Unindo clipes...")
-            final_video = os.path.join(output_dir, "final_compilation.mp4")
-            editor.merge_videos(clip_paths, final_video)
+            final_compilation = os.path.join(output_dir, "final_compilation.mp4")
+            editor.merge_videos(clip_paths, final_compilation)
 
         progress(1.0, desc="✅ Concluído!")
-        return final_video, clip_paths, json.dumps(metadata_list, indent=4, ensure_ascii=False)
+        return final_compilation, clip_paths, json.dumps(metadata_list, indent=4, ensure_ascii=False)
 
     except Exception as e:
         logger.error(f"Erro no processamento: {str(e)}")
@@ -98,7 +116,9 @@ with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
     
     with gr.Row():
         with gr.Column(scale=1):
-            input_video = gr.Video(label="Upload do Podcast")
+            input_video = gr.Video(label="Upload do Podcast (Opcional se usar Link)")
+            yt_url = gr.Textbox(label="OU Link do YouTube", placeholder="https://www.youtube.com/watch?v=...")
+            
             mode_radio = gr.Radio(["Fast", "High Quality"], label="Modo", value="Fast")
             
             with gr.Accordion("Configurações Avançadas", open=False):
@@ -122,11 +142,11 @@ with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
 
     btn_run.click(
         process_video,
-        inputs=[input_video, mode_radio, whisper_size, llm_id],
+        inputs=[input_video, yt_url, mode_radio, whisper_size, llm_id],
         outputs=[output_final, output_gallery, output_json]
     )
     
-    gr.Markdown("--- \n *Dica: Use o modo 'Fast' e 'TinyLlama' para processamento rápido em máquinas com menos de 10GB de VRAM.*")
+    gr.Markdown("--- \n *Dica: Use o link do YouTube para evitar uploads lentos de arquivos grandes!*")
 
 if __name__ == "__main__":
     demo.launch(share=True)

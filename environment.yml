@@ -15,6 +15,7 @@ dependencies:
   - opencv
   - gradio
   - pytz
+  - yt-dlp
   - ffmpeg
   - pip
   - pip:
