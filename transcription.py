@@ -44,7 +44,14 @@ class AudioTranscriber:
         results = []
         # Duration info
         logger.info(f"Processing audio with duration {info.duration_after_vad:.2f}s (VAD filtered)")
+        
+        last_log_time = 0
         for segment in segments:
+            # Log progress every 30 seconds of video time
+            if segment.end - last_log_time > 30:
+                logger.info(f"Transcribed up to {segment.end:.2f}s...")
+                last_log_time = segment.end
+                
             res = {
                 "start": segment.start,
                 "end": segment.end,

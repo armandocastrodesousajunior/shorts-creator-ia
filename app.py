@@ -138,7 +138,7 @@ with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
                 whisper_size = gr.Dropdown(
                     ["tiny", "base", "small", "medium", "large-v3"], 
                     label="Modelo Whisper", 
-                    value="large-v3"
+                    value="small"
                 )
                 llm_id = gr.Dropdown(
                     ["mistralai/Mistral-7B-Instruct-v0.2", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"], 
