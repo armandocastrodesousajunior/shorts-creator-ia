@@ -10,6 +10,10 @@ dependencies:
   - torchvision
   - torchaudio
   - pytorch-cuda=12.1
+  - pillow
+  - moviepy
+  - opencv
+  - gradio
   - ffmpeg
   - pip
   - pip:
@@ -17,7 +21,6 @@ dependencies:
       - transformers
       - huggingface_hub
       - accelerate
-      - moviepy
       - flask
       - pillow
       - scikit-image
