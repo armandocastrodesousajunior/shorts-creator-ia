@@ -62,9 +62,16 @@ def process_video(video_path, yt_url, mode, whisper_size, llm_id, progress=gr.Pr
         visual_context = []
         if mode == "High Quality":
             progress(0.4, desc="👁️ Analisando visualmente...")
-            # Simple heuristic sampling for Gradio demo
-            duration_s = transcription['segments'][-1]['end']
-            for ts in range(0, int(duration_s), 20):
+            # Dynamically adjust sampling interval based on duration
+            try:
+                duration_s = transcription['segments'][-1]['end']
+            except (KeyError, IndexError):
+                duration_s = 60 # Default fallback
+                
+            # Sample at most ~100 frames to avoid hang, or every 60s for long videos
+            interval = max(60, int(duration_s / 100)) 
+            
+            for ts in range(0, int(duration_s), interval):
                 frame = analyzer.extract_frame(final_video_path, ts * 1000)
                 analysis = analyzer.analyze_frame(frame)
                 visual_context.append({"timestamp": ts, "analysis": analysis})

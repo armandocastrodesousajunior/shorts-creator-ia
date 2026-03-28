@@ -31,14 +31,19 @@ class AudioTranscriber:
         Transcribes the audio and returns segments with timestamps.
         """
         logger.info(f"Transcribing: {audio_path}")
+        # Use VAD (Voice Activity Detection) to skip silence and speed up transcription
         segments, info = self.model.transcribe(
             audio_path,
             language=language,
             beam_size=5,
-            word_timestamps=True
+            word_timestamps=True,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
         )
         
         results = []
+        # Duration info
+        logger.info(f"Processing audio with duration {info.duration_after_vad:.2f}s (VAD filtered)")
         for segment in segments:
             res = {
                 "start": segment.start,
