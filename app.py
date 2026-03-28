@@ -16,12 +16,19 @@ from video_editor import VideoEditor
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def download_youtube_video(url, output_dir="gradio_outputs"):
+def download_youtube_video(url, output_dir="gradio_outputs", progress=None):
     os.makedirs(output_dir, exist_ok=True)
+    
+    def progress_hook(d):
+        if d['status'] == 'downloading' and progress:
+            p = d.get('downloaded_bytes', 0) / d.get('total_bytes', 1)
+            progress(p * 0.1, desc=f"📥 Baixando do YouTube: {d['_percent_str']}")
+
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
         'noplaylist': True,
+        'progress_hooks': [progress_hook],
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -35,11 +42,10 @@ def process_video(video_path, yt_url, mode, whisper_size, llm_id, progress=gr.Pr
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        # 1. Download se for URL
+        # 1. Download se for URL com progresso
         final_video_path = video_path
         if yt_url:
-            progress(0, desc="📥 Baixando vídeo do YouTube...")
-            final_video_path = download_youtube_video(yt_url, output_dir)
+            final_video_path = download_youtube_video(yt_url, output_dir, progress)
 
         progress(0.1, desc="🚀 Inicializando modelos...")
         transcriber = AudioTranscriber(model_size=whisper_size)
@@ -108,7 +114,7 @@ theme = gr.themes.Soft(
     button_primary_background_fill_hover="*primary_600",
 )
 
-with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
+with gr.Blocks(title="Creator Shorts IA") as demo:
     gr.Markdown("""
     # 🎥 Creator Shorts IA
     ### Transforme seus Podcasts em Cortes Virais automaticamente.
@@ -149,4 +155,4 @@ with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
     gr.Markdown("--- \n *Dica: Use o link do YouTube para evitar uploads lentos de arquivos grandes!*")
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    demo.launch(share=True, theme=theme)
