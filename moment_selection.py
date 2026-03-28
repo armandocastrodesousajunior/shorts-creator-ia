@@ -42,8 +42,8 @@ class MomentSelector:
         if not segments:
             return []
 
-        # Divide into chunks of ~5 minutes or 100 segments to fit context window
-        chunk_size = 80 
+        # Divide into chunks of ~2-3 minutes or 40 segments to fit TinyLlama's 2048 context window
+        chunk_size = 40 
         all_moments = []
         
         logger.info(f"Processing {len(segments)} segments in chunks of {chunk_size}...")
@@ -65,42 +65,46 @@ class MomentSelector:
                         content += f"At {ctx['timestamp']:.2f}s: {ctx['analysis']}\n"
 
             prompt = f"""
-            Analyze the following podcast transcript segment and identify the most viral or interesting moments (30-60 seconds each).
-            Return your answer ONLY as a JSON list of objects.
-            Format example: [{{"start": 12.5, "end": 45.0, "reason": "Funny story"}}]
+            Task: Identify interesting viral moments in this transcript segment.
+            Constraint: Return ONLY a JSON list of objects. No intro, no outro.
+            Format: [{{"start": 0.0, "end": 30.0, "reason": "summary"}}]
             
             Transcript Fragment:
             {content}
             
-            Answer (JSON only):
+            Answer (JSON ONLY):
             """
             
             try:
                 logger.info(f"Querying LLM for chunk {i//chunk_size + 1}...")
                 outputs = self.pipe(prompt)
-                response_text = outputs[0]["generated_text"].split("Answer (JSON only):")[-1].strip()
                 
-                # Clean potential Markdown backticks
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[-1].split("```")[0].strip()
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[-1].split("```")[0].strip()
-                
-                # Basic JSON cleanup for aggressive LLMs
-                if not response_text.startswith("["):
-                    # Find first '[' and last ']'
-                    start_idx = response_text.find("[")
-                    end_idx = response_text.rfind("]")
-                    if start_idx != -1 and end_idx != -1:
-                        response_text = response_text[start_idx:end_idx+1]
+                # Get response and handle prompt repetition
+                raw_response = outputs[0]["generated_text"]
+                if "Answer (JSON ONLY):" in raw_response:
+                    response_text = raw_response.split("Answer (JSON ONLY):")[-1].strip()
+                else:
+                    # Fallback if the whole prompt is returned
+                    response_text = raw_response.strip()
 
-                moments = json.loads(response_text)
-                if isinstance(moments, list):
-                    all_moments.extend(moments)
+                # Robust JSON extraction: Find the first '[' and the last ']'
+                start_idx = response_text.find("[")
+                end_idx = response_text.rfind("]")
+                
+                if start_idx != -1 and end_idx != -1:
+                    json_str = response_text[start_idx:end_idx+1]
+                    # Clean up common LLM errors like trailing commas
+                    json_str = json_str.replace(",]", "]").replace(", }", "}")
+                    
+                    moments = json.loads(json_str)
+                    if isinstance(moments, list):
+                        all_moments.extend(moments)
+                else:
+                    logger.warning(f"No JSON list found in chunk {i//chunk_size + 1} response.")
                     
             except Exception as e:
                 logger.warning(f"Failed to process chunk {i//chunk_size + 1}: {e}")
                 continue
 
-        # Limit total moments to avoid excessive clipping
-        return all_moments[:10]
+        # Limit and deduplicate nearby moments
+        return all_moments[:12]
