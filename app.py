@@ -114,7 +114,7 @@ theme = gr.themes.Soft(
     button_primary_background_fill_hover="*primary_600",
 )
 
-with gr.Blocks(title="Creator Shorts IA") as demo:
+with gr.Blocks(theme=theme, title="Creator Shorts IA") as demo:
     gr.Markdown("""
     # 🎥 Creator Shorts IA
     ### Transforme seus Podcasts em Cortes Virais automaticamente.
@@ -155,4 +155,4 @@ with gr.Blocks(title="Creator Shorts IA") as demo:
     gr.Markdown("--- \n *Dica: Use o link do YouTube para evitar uploads lentos de arquivos grandes!*")
 
 if __name__ == "__main__":
-    demo.launch(share=True, theme=theme)
+    demo.launch(share=True)
