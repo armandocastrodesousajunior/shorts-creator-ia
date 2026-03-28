@@ -103,50 +103,45 @@ class MomentSelector:
                 logger.warning(f"Failed to process chunk {i//chunk_size + 1}: {e}")
                 continue
 
-        # --- Post-processing: Enforce min/max duration ---
+        # --- Post-processing: Enforce min/max duration and remove overlaps ---
         MIN_DURATION = 40    # seconds (minimum clip length)
         MAX_DURATION = 180   # seconds (maximum clip length = 3 min)
-        TARGET_DURATION = 60 # seconds (ideal clip length)
         
-        final_moments = []
-        seen_starts = set()
-        
+        # 1. Basic validation and type coercion
+        valid_moments = []
         for m in all_moments:
-            start = m.get('start')
-            end = m.get('end')
-            
-            if start is None or end is None:
+            try:
+                start = float(m.get('start', -1))
+                end = float(m.get('end', -1))
+                if start < 0 or end <= start:
+                    continue
+                valid_moments.append({"start": start, "end": end, "reason": m.get("reason", "Viral moment")})
+            except (TypeError, ValueError):
                 continue
-            
-            start = float(start)
-            end = float(end)
-            
-            # Skip if end is before start (bad data)
-            if end <= start:
-                continue
-            
-            duration = end - start
-            
-            # Expand clips that are too short to the target duration
-            if duration < MIN_DURATION:
-                new_end = start + TARGET_DURATION
-                logger.debug(f"Expanding clip {start:.1f}-{end:.1f} to {start:.1f}-{new_end:.1f}")
-                end = new_end
 
-            # Trim clips that are too long
-            if (end - start) > MAX_DURATION:
-                end = start + MAX_DURATION
-            
-            # Deduplicate by start time (avoid near-identical clips)
-            start_key = round(start)
-            if start_key in seen_starts:
+        # 2. Sort by start time
+        valid_moments.sort(key=lambda x: x['start'])
+        
+        # 3. Enforce min duration by expanding the END (not forcing a fixed 60s)
+        #    Only expand if shorter than minimum. Keep natural duration if >= min.
+        for m in valid_moments:
+            duration = m['end'] - m['start']
+            if duration < MIN_DURATION:
+                m['end'] = m['start'] + MIN_DURATION
+            if (m['end'] - m['start']) > MAX_DURATION:
+                m['end'] = m['start'] + MAX_DURATION
+
+        # 4. Remove overlapping clips (greedy: keep first, skip if overlaps with previous)
+        final_moments = []
+        for m in valid_moments:
+            if not final_moments:
+                final_moments.append(m)
                 continue
-            seen_starts.add(start_key)
-            
-            final_moments.append({"start": start, "end": end, "reason": m.get("reason", "Viral moment")})
+            prev = final_moments[-1]
+            # Skip if this clip starts before the previous one ends
+            if m['start'] < prev['end']:
+                continue
+            final_moments.append(m)
         
-        # Sort chronologically
-        final_moments.sort(key=lambda x: x['start'])
-        
-        logger.info(f"Final: {len(final_moments)} clips, returning top 12.")
+        logger.info(f"Final: {len(final_moments)} non-overlapping clips (from {len(all_moments)} candidates).")
         return final_moments[:12]
