@@ -29,10 +29,25 @@ def download_youtube_video(url, output_dir="gradio_outputs", progress=None):
         'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
         'noplaylist': True,
         'progress_hooks': [progress_hook],
+        # Tenta burlar detecção de bot usando clientes mobile/web
+        'extractor_args': {'youtube': {'player_client': ['android', 'mweb']}}, 
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            return ydl.prepare_filename(info)
+    except Exception as e:
+        logger.warning(f"yt-dlp falhou: {e}. Tentando fallback com pytubefix...")
+        try:
+            from pytubefix import YouTube
+            yt = YouTube(url, on_progress_callback=lambda stream, chunk, bytes_remaining: 
+                         progress((1 - bytes_remaining/stream.filesize) * 0.1, desc="📥 Baixando (PytubeFallback)...") if progress else None)
+            stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+            output_path = stream.download(output_path=output_dir)
+            return output_path
+        except Exception as e2:
+            raise Exception(f"Ambos yt-dlp e pytubefix falharam. Erro original: {e}")
 
 def process_video(video_path, yt_url, mode, whisper_size, llm_id, progress=gr.Progress()):
     if not video_path and not yt_url:

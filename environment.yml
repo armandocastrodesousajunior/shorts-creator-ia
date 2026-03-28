@@ -23,6 +23,7 @@ dependencies:
       - transformers
       - huggingface_hub
       - accelerate
+      - pytubefix
       - flask
       - scikit-image
       - notebook
