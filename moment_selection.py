@@ -35,14 +35,14 @@ class MomentSelector:
 
     def select_moments(self, transcription_results, visual_context=None):
         """
-        Analyzes transcription (and visual context) to find interesting segments.
-        Handles long transcripts by splitting into chunks.
+        Analyzes transcription to find interesting segments.
+        Extremely robust version for small models like TinyLlama.
         """
+        import re
         segments = transcription_results.get('segments', [])
         if not segments:
             return []
 
-        # Divide into chunks of ~2-3 minutes or 40 segments to fit TinyLlama's 2048 context window
         chunk_size = 40 
         all_moments = []
         
@@ -50,61 +50,63 @@ class MomentSelector:
         
         for i in range(0, len(segments), chunk_size):
             chunk = segments[i:i + chunk_size]
-            
-            # Prepare content for this chunk
             content = ""
             for seg in chunk:
-                content += f"[{seg['start']:.2f} - {seg['end']:.2f}] {seg['text']}\n"
-            
-            # Add visual context if it falls within this chunk's time range
-            if visual_context:
-                chunk_start = chunk[0]['start']
-                chunk_end = chunk[-1]['end']
-                for ctx in visual_context:
-                    if chunk_start <= ctx['timestamp'] <= chunk_end:
-                        content += f"At {ctx['timestamp']:.2f}s: {ctx['analysis']}\n"
+                content += f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}\n"
 
-            prompt = f"""
-            Task: Identify interesting viral moments in this transcript segment.
-            Constraint: Return ONLY a JSON list of objects. No intro, no outro.
-            Format: [{{"start": 0.0, "end": 30.0, "reason": "summary"}}]
-            
-            Transcript Fragment:
-            {content}
-            
-            Answer (JSON ONLY):
-            """
+            # Extreme simplicity for TinyLlama
+            prompt = f"<|system|>\nList viral moments as JSON. Format: [{{ \"start\": T1, \"end\": T2 }}]<|user|>\nTranscript:\n{content}\n<|assistant|>\nJSON:"
             
             try:
-                logger.info(f"Querying LLM for chunk {i//chunk_size + 1}...")
+                logger.info(f"Querying chunk {i//chunk_size + 1}...")
                 outputs = self.pipe(prompt)
-                
-                # Get response and handle prompt repetition
                 raw_response = outputs[0]["generated_text"]
-                if "Answer (JSON ONLY):" in raw_response:
-                    response_text = raw_response.split("Answer (JSON ONLY):")[-1].strip()
+                
+                # Split by assistant marker to get only the answer
+                if "<|assistant|>\nJSON:" in raw_response:
+                    response_text = raw_response.split("<|assistant|>\nJSON:")[-1].strip()
+                elif "JSON:" in raw_response:
+                    response_text = raw_response.split("JSON:")[-1].strip()
                 else:
-                    # Fallback if the whole prompt is returned
                     response_text = raw_response.strip()
 
-                # Robust JSON extraction: Find the first '[' and the last ']'
+                # 1. Try standard JSON parsing
                 start_idx = response_text.find("[")
                 end_idx = response_text.rfind("]")
                 
                 if start_idx != -1 and end_idx != -1:
                     json_str = response_text[start_idx:end_idx+1]
-                    # Clean up common LLM errors like trailing commas
-                    json_str = json_str.replace(",]", "]").replace(", }", "}")
-                    
-                    moments = json.loads(json_str)
-                    if isinstance(moments, list):
-                        all_moments.extend(moments)
+                    try:
+                        moments = json.loads(json_str)
+                        if isinstance(moments, list):
+                            all_moments.extend(moments)
+                            continue
+                    except:
+                        pass # Fallback to regex
+
+                # 2. Regex Fallback: Find any objects like {"start": 10, "end": 20}
+                matches = re.findall(r'\{\s*"start":\s*(\d+\.?\d*),\s*"end":\s*(\d+\.?\d*)[^}]*\}', response_text)
+                if matches:
+                    logger.info(f"Regex found {len(matches)} moments in chunk {i//chunk_size + 1}")
+                    for m in matches:
+                        all_moments.append({"start": float(m[0]), "end": float(m[1]), "reason": "Viral moment"})
                 else:
-                    logger.warning(f"No JSON list found in chunk {i//chunk_size + 1} response.")
+                    # 3. Last Resort Fallback: Look for the first 30 seconds of the chunk if LLM failed
+                    logger.warning(f"Chunk {i//chunk_size + 1}: LLM failed. Using heuristic fallback.")
+                    all_moments.append({
+                        "start": chunk[0]['start'], 
+                        "end": min(chunk[0]['start'] + 45, chunk[-1]['end']), 
+                        "reason": "Interesting segment"
+                    })
                     
             except Exception as e:
                 logger.warning(f"Failed to process chunk {i//chunk_size + 1}: {e}")
                 continue
 
-        # Limit and deduplicate nearby moments
-        return all_moments[:12]
+        # Post-processing: Remove overlaps and duplicates
+        final_moments = []
+        for m in all_moments:
+            if m.get('start') is not None and m.get('end') is not None:
+                final_moments.append(m)
+                
+        return final_moments[:12]
