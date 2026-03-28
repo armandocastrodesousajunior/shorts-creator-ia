@@ -103,10 +103,50 @@ class MomentSelector:
                 logger.warning(f"Failed to process chunk {i//chunk_size + 1}: {e}")
                 continue
 
-        # Post-processing: Remove overlaps and duplicates
+        # --- Post-processing: Enforce min/max duration ---
+        MIN_DURATION = 40    # seconds (minimum clip length)
+        MAX_DURATION = 180   # seconds (maximum clip length = 3 min)
+        TARGET_DURATION = 60 # seconds (ideal clip length)
+        
         final_moments = []
+        seen_starts = set()
+        
         for m in all_moments:
-            if m.get('start') is not None and m.get('end') is not None:
-                final_moments.append(m)
-                
+            start = m.get('start')
+            end = m.get('end')
+            
+            if start is None or end is None:
+                continue
+            
+            start = float(start)
+            end = float(end)
+            
+            # Skip if end is before start (bad data)
+            if end <= start:
+                continue
+            
+            duration = end - start
+            
+            # Expand clips that are too short to the target duration
+            if duration < MIN_DURATION:
+                new_end = start + TARGET_DURATION
+                logger.debug(f"Expanding clip {start:.1f}-{end:.1f} to {start:.1f}-{new_end:.1f}")
+                end = new_end
+
+            # Trim clips that are too long
+            if (end - start) > MAX_DURATION:
+                end = start + MAX_DURATION
+            
+            # Deduplicate by start time (avoid near-identical clips)
+            start_key = round(start)
+            if start_key in seen_starts:
+                continue
+            seen_starts.add(start_key)
+            
+            final_moments.append({"start": start, "end": end, "reason": m.get("reason", "Viral moment")})
+        
+        # Sort chronologically
+        final_moments.sort(key=lambda x: x['start'])
+        
+        logger.info(f"Final: {len(final_moments)} clips, returning top 12.")
         return final_moments[:12]
